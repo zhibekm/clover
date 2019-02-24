@@ -52,6 +52,12 @@ matrix:
         - markdownlint docs
         - gitbook install
         - gitbook build
+    - name: "Packages tests"
+      before_script:
+        - docker pull ros:kinetic-ros-core
+      script:
+        - docker run --privileged --rm -v /dev:/dev -v $(pwd):/builder/repo -e TRAVIS_TAG="${TRAVIS_TAG}" ${DOCKER}
+
 # ***
 # Disable deployments for now, revisit this later
 #   --sfalexrog, 06.02.2019
