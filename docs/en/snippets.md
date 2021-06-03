@@ -384,3 +384,22 @@ rospy.sleep(5)
 # Turn markers recognition on
 client.update_configuration({'enabled': True})
 ```
+
+<!-- markdownlint-disable MD044 -->
+
+### # {#aruco-map-dynamic}
+
+<!-- markdownlint-enable MD044 -->
+
+Change the used [ArUco markers map file](aruco_map.md) dynamically:
+
+```python
+import rospy
+import dynamic_reconfigure.client
+
+rospy.init_node('flight')
+
+client = dynamic_reconfigure.client.Client('aruco_map')
+
+client.update_configuration({'map': '/home/pi/catkin_ws/src/clover/aruco_pose/map/office.txt'})
+```

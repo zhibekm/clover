@@ -19,11 +19,13 @@
 #include <vector>
 #include <fstream>
 #include <algorithm>
+#include <memory>
 #include <ros/ros.h>
 #include <nodelet/nodelet.h>
 #include <pluginlib/class_list_macros.h>
 #include <image_transport/image_transport.h>
 #include <cv_bridge/cv_bridge.h>
+#include <dynamic_reconfigure/server.h>
 #include <tf/transform_datatypes.h>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -41,6 +43,7 @@
 
 #include <aruco_pose/MarkerArray.h>
 #include <aruco_pose/Marker.h>
+#include <aruco_pose/MapConfig.h>
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/aruco.hpp>
@@ -74,7 +77,10 @@ private:
 	tf2_ros::StaticTransformBroadcaster static_br_;
 	tf2_ros::Buffer tf_buffer_;
 	tf2_ros::TransformListener tf_listener_{tf_buffer_};
+	std::shared_ptr<dynamic_reconfigure::Server<aruco_pose::MapConfig>> dyn_srv_;
+	bool enabled_ = true;
 	visualization_msgs::MarkerArray vis_array_;
+	std::string type_;
 	std::string known_tilt_, map_, markers_frame_, markers_parent_frame_;
 	int image_width_, image_height_, image_margin_;
 	bool auto_flip_, image_axis_;
@@ -96,8 +102,7 @@ public:
 			                 static_cast<cv::aruco::PREDEFINED_DICTIONARY_NAME>(nh_priv_.param("dictionary", 2)));
 		camera_matrix_ = cv::Mat::zeros(3, 3, CV_64F);
 
-		std::string type, map;
-		type = nh_priv_.param<std::string>("type", "map");
+		type_ = nh_priv_.param<std::string>("type", "map");
 		transform_.child_frame_id = nh_priv_.param<std::string>("frame_id", "aruco_map");
 		known_tilt_ = nh_priv_.param<std::string>("known_tilt", "");
 		auto_flip_ = nh_priv_.param("auto_flip", false);
@@ -110,13 +115,13 @@ public:
 
 		// createStripLine();
 
-		if (type == "map") {
-			param(nh_priv_, "map", map);
-			loadMap(map);
-		} else if (type == "gridboard") {
+		if (type_ == "map") {
+			param(nh_priv_, "map", map_);
+			loadMap(map_);
+		} else if (type_ == "gridboard") {
 			createGridBoard(nh_priv_);
 		} else {
-			NODELET_FATAL("unknown type: %s", type.c_str());
+			NODELET_FATAL("unknown type: %s", type_.c_str());
 			ros::shutdown();
 		}
 
@@ -124,10 +129,7 @@ public:
 		vis_markers_pub_ = nh_priv_.advertise<visualization_msgs::MarkerArray>("visualization", 1, true);
 		debug_pub_ = it_priv.advertise("debug", 1);
 
-		publishMarkersFrames();
-		publishMarkers();
-		publishMapImage();
-		vis_markers_pub_.publish(vis_array_);
+		publishMap();
 
 		image_sub_.subscribe(nh_, "image_raw", 1);
 		info_sub_.subscribe(nh_, "camera_info", 1);
@@ -136,6 +138,12 @@ public:
 		sync_.reset(new message_filters::Synchronizer<SyncPolicy>(SyncPolicy(10), image_sub_, info_sub_, markers_sub_));
 		sync_->registerCallback(boost::bind(&ArucoMap::callback, this, _1, _2, _3));
 
+		dyn_srv_ = std::make_shared<dynamic_reconfigure::Server<aruco_pose::MapConfig>>(nh_priv_);
+		dynamic_reconfigure::Server<aruco_pose::MapConfig>::CallbackType cb;
+
+		cb = std::bind(&ArucoMap::paramCallback, this, std::placeholders::_1, std::placeholders::_2);
+		dyn_srv_->setCallback(cb);
+
 		NODELET_INFO("ready");
 	}
 
@@ -143,6 +151,8 @@ public:
 	              const sensor_msgs::CameraInfoConstPtr& cinfo,
 	              const aruco_pose::MarkerArrayConstPtr& markers)
 	{
+		if (!enabled_) return;
+
 		int valid = 0;
 		int count = markers->markers.size();
 		std::vector<int> ids;
@@ -273,6 +283,8 @@ publish_debug:
 			ros::shutdown();
 		}
 
+		clearMarkers();
+
 		while (std::getline(f, line)) {
 			int id;
 			double length, x, y, z, yaw, pitch, roll;
@@ -327,6 +339,14 @@ publish_debug:
 		}
 
 		NODELET_INFO("loading %s complete (%d markers)", filename.c_str(), static_cast<int>(board_->ids.size()));
+	}
+
+	void publishMap()
+	{
+		publishMarkersFrames();
+		publishMarkers();
+		publishMapImage();
+		vis_markers_pub_.publish(vis_array_);
 	}
 
 	void createGridBoard(ros::NodeHandle& nh)
@@ -384,6 +404,15 @@ publish_debug:
 	// 	marker.pose.orientation.w = 1;
 	// 	vis_array_.markers.push_back(marker);
 	// }
+
+	void clearMarkers()
+	{
+		board_->ids.clear();
+		board_->objPoints.clear();
+		markers_.markers.clear();
+		vis_array_.markers.clear();
+		markers_transforms_.clear();
+	}
 
 	void addMarker(int id, double length, double x, double y, double z,
 				   double yaw, double pitch, double roll)
@@ -508,6 +537,17 @@ publish_debug:
 
 		msg.image = image;
 		img_pub_.publish(msg.toImageMsg());
+	}
+
+	void paramCallback(aruco_pose::MapConfig &config, uint32_t level)
+	{
+		enabled_ = config.enabled;
+		if (type_ == "map" && config.map != map_) {
+			// map changed
+			map_ = config.map;
+			loadMap(map_);
+			publishMap();
+		}
 	}
 };
 

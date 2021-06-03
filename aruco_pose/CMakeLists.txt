@@ -120,6 +120,7 @@ generate_messages(
 ## Generate dynamic reconfigure parameters in the 'cfg' folder
 generate_dynamic_reconfigure_options(
   cfg/Detector.cfg
+  cfg/Map.cfg
 )
 
 ###################################
@@ -133,7 +134,7 @@ generate_dynamic_reconfigure_options(
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
   INCLUDE_DIRS DEPENDS OpenCV
-  LIBRARIES aruco_pose
+  LIBRARIES ${PROJECT_NAME}
   CATKIN_DEPENDS message_runtime
 #  DEPENDS system_lib
 )
@@ -151,7 +152,7 @@ include_directories(
 )
 
 ## Declare a C++ library
-add_library(aruco_pose
+add_library(${PROJECT_NAME}
   src/aruco_detect.cpp
   src/aruco_map.cpp
   src/draw.cpp
@@ -175,13 +176,13 @@ add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_generate_messages_cpp ${PROJECT
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(aruco_pose
+target_link_libraries(${PROJECT_NAME}
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
 )
 
 # Prevent aruco_pose from having undefined symbols
-set_property(TARGET aruco_pose
+set_property(TARGET ${PROJECT_NAME}
   APPEND
   PROPERTY LINK_FLAGS
   -Wl,--no-undefined
